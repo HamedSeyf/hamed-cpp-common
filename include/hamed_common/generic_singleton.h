@@ -25,7 +25,7 @@ protected:
 	TSingleton& operator=(TSingleton&&) = delete;
 };
 
-#define DEFINESINGELTON(Class) \
+#define ENFORCE_SINGELTON_WITH_DEFAULT_CTOR(Class) \
 private: \
 Class() = default; \
 friend class TSingleton<Class>

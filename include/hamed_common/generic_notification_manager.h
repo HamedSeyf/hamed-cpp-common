@@ -7,7 +7,7 @@
 #include <unordered_map>
 #include <utility>
 
-#include "generic_singelton.h"
+#include "hamed_common/generic_singleton.h"
 
 
 template<typename Type>
