@@ -27,6 +27,7 @@ target_sources(
 		FILE_SET HEADERS
 		BASE_DIRS include
 		FILES
+			include/hamed_common/generic_types.h
 			include/hamed_common/generic_notification_manager.h
 			include/hamed_common/generic_singleton.h
 			include/hamed_common/sorts.h

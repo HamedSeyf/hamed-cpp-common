@@ -9,7 +9,7 @@ class TSingleton
 {
 public:
 
-	static T& GetInstance()
+	[[nodiscard]] static T& GetInstance()
 	{
 		static T sInstance;
 		return sInstance;
@@ -17,7 +17,7 @@ public:
 
 protected:
 	TSingleton() = default;
-	virtual ~TSingleton() = default;
+	~TSingleton() = default;
 
 	TSingleton(const TSingleton&) = delete;
 	TSingleton& operator=(const TSingleton&) = delete;
