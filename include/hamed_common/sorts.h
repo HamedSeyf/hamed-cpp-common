@@ -27,7 +27,8 @@ void BubbleSort(std::vector<T>& Input, const TComparator& Comparator = TComparat
 		return;
 	}
 
-	for (std::size_t OuterElementIndexToFix = Input.size() - 1; OuterElementIndexToFix > 0; --OuterElementIndexToFix)
+    // Safe to use Input.size() - 1 due to size check earlier
+    for (std::size_t OuterElementIndexToFix = Input.size() - 1; OuterElementIndexToFix > 0; --OuterElementIndexToFix)
 	{
 		bool bHasSwappedAnyElement = false;
 
@@ -111,5 +112,5 @@ template<typename T, typename TComparator = std::less<T>>
 template<typename T, typename TComparator = std::less<T>>
 [[nodiscard]] std::vector<T> MergeSort(const std::vector<T>& Input, const TComparator& Comparator = TComparator())
 {
-	return MergeSort(Input, 0, Input.size() - 1, Comparator);
+    return Input.size() < 2 ? Input : MergeSort(Input, 0, Input.size() - 1, Comparator);
 }
