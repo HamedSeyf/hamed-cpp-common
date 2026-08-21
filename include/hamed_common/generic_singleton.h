@@ -1,7 +1,7 @@
 #pragma once
 
-#include <cstdint>
-#include <functional>
+import <cstdint>;
+import <functional>;
 
 
 template<typename T>

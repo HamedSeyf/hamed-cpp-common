@@ -8,14 +8,16 @@
 
 #pragma once
 
-#include <cassert>
-#include <concepts>
-#include <cstddef>
-#include <memory>
-#include <optional>
-#include <span>
-#include <type_traits>
-#include <utility>
+import <atomic>;
+import <cassert>;
+import <concepts>;
+import <cstddef>;
+import <memory>;
+import <mutex>;
+import <optional>;
+import <span>;
+import <type_traits>;
+import <utility>;
 
 
 template<typename T>
@@ -234,4 +236,75 @@ private:
 	size_type Head { 0 };
 	size_type Tail { 0 };
 	value_type* Storage { nullptr };
+};
+
+enum class TStateMachineState
+{
+    NotStarted = 0,
+    InProgress,
+    Stopping_Gracefully,
+    Stopped,
+};
+
+template<typename T = TStateMachineState>
+    requires
+        std::is_trivially_copyable_v<T> &&
+        std::semiregular<T> &&
+        std::totally_ordered<T>
+class TStateMachine
+{
+public:
+
+    [[nodiscard]] T GetState() const noexcept { return _state.load(std::memory_order_relaxed); }
+
+    // Returns the new state if transition was successful
+    virtual std::optional<T> SwitchToState(const T newState)
+    {
+        std::unique_lock<std::mutex> lock(_state_mutex);
+
+        const std::optional<T> result = SwitchToStateLocked(lock, newState);
+
+        if (result)
+        {
+            lock.unlock();
+            OnStateTransitionUnlocked(newState);
+        }
+
+        return result;
+    }
+
+protected:
+
+    virtual ~TStateMachine() = default;
+
+    // Same as SwitchToState, but the caller must already hold _state_mutex.
+    // On success, the caller is responsible for calling
+    // PostStateTransitionMutexUnLocked(newState) itself, after unlocking.
+    std::optional<T> SwitchToStateLocked(const std::unique_lock<std::mutex>& stateLock, const T newState)
+    {
+        if (!stateLock.owns_lock() || stateLock.mutex() != &_state_mutex)
+        {
+            assert(false && "SwitchToStateLocked requires this state machine's mutex.");
+            return std::nullopt;
+        }
+
+        if (!IsStateTransitionAllowedLocked(GetState(), newState))
+        {
+            return std::nullopt;
+        }
+
+        _state.store(newState, std::memory_order_relaxed);
+        OnStateTransitionLocked(newState);
+        return newState;
+    }
+
+    virtual bool IsStateTransitionAllowedLocked(const T fromState, const T toState) const { return toState > fromState; };
+
+    virtual void OnStateTransitionLocked([[maybe_unused]] const T newState) noexcept {};
+    virtual void OnStateTransitionUnlocked([[maybe_unused]] const T newState) noexcept {};
+
+    mutable std::mutex _state_mutex;
+
+private:
+    std::atomic<T> _state{ T{} };
 };
