@@ -196,7 +196,36 @@ public:
 		}
 
 		return Destination.first(NumberToPop);
-	}
+    }
+
+    template <typename Predicate>
+        requires std::predicate<Predicate&, const value_type&>
+    [[nodiscard]] std::span<value_type> pop_into(std::span<value_type> Destination, Predicate&& predicate)
+        requires
+            std::is_nothrow_move_constructible_v<value_type>&&
+            std::is_nothrow_move_assignable_v<value_type>
+    {
+        const size_type OriginalSize = Size;
+        size_type NumberPopped = 0;
+
+        for (size_type Index = 0; Index < OriginalSize; ++Index)
+        {
+            value_type Current = std::move(front());
+            pop();
+
+            if (NumberPopped < Destination.size() && std::invoke(predicate, Current))
+            {
+                Destination[NumberPopped++] = std::move(Current);
+            }
+            else
+            {
+                [[maybe_unused]] const bool success = try_push(std::move(Current));
+                assert(success && "Failed to push inside TRingQueue's pop_into.");
+            }
+        }
+
+        return Destination.first(NumberPopped);
+    }
 
 	void clear() noexcept
 	{
@@ -246,11 +275,20 @@ enum class TStateMachineState
     Stopped,
 };
 
-template<typename T = TStateMachineState>
+template <typename T>
+concept BasicLockable =
+    requires(T mutex)
+{
+    mutex.lock();
+    mutex.unlock();
+};
+
+template<typename T = TStateMachineState, typename TMutex = std::mutex>
     requires
         std::is_trivially_copyable_v<T> &&
         std::semiregular<T> &&
-        std::totally_ordered<T>
+        std::totally_ordered<T> &&
+        BasicLockable<TMutex>
 class TStateMachine
 {
 public:
@@ -260,7 +298,7 @@ public:
     // Returns the new state if transition was successful
     virtual std::optional<T> SwitchToState(const T newState)
     {
-        std::unique_lock<std::mutex> lock(_state_mutex);
+        std::unique_lock<TMutex> lock(_state_mutex);
 
         const std::optional<T> result = SwitchToStateLocked(lock, newState);
 
@@ -280,7 +318,7 @@ protected:
     // Same as SwitchToState, but the caller must already hold _state_mutex.
     // On success, the caller is responsible for calling
     // PostStateTransitionMutexUnLocked(newState) itself, after unlocking.
-    std::optional<T> SwitchToStateLocked(const std::unique_lock<std::mutex>& stateLock, const T newState)
+    std::optional<T> SwitchToStateLocked(const std::unique_lock<TMutex>& stateLock, const T newState)
     {
         if (!stateLock.owns_lock() || stateLock.mutex() != &_state_mutex)
         {
@@ -303,7 +341,7 @@ protected:
     virtual void OnStateTransitionLocked([[maybe_unused]] const T newState) noexcept {};
     virtual void OnStateTransitionUnlocked([[maybe_unused]] const T newState) noexcept {};
 
-    mutable std::mutex _state_mutex;
+    mutable TMutex _state_mutex;
 
 private:
     std::atomic<T> _state{ T{} };

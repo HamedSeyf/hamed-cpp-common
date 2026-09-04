@@ -37,7 +37,7 @@ concept IncrementableHandle =
 // exclusive lock, while concurrent readers take shared locks only long enough
 // to create detached snapshots. A snapshot can therefore remain in use after
 // one of its objects is unsubscribed from the registry.
-// T being the subscriber type; K being subscriptions' key type; H being subscribers' handle type
+// T being the subscriber type; K being subscriptions' key type; H being subscribers' handle type -> default constructed value of H (i.e. the start point) is reserved for invalid
 template<typename T, typename K = std::string, typename H = std::uint64_t>
     requires
         std::is_copy_constructible_v<T> &&
@@ -59,16 +59,7 @@ public:
     {
         std::unique_lock lock{ _subscriptionsMutex };
 
-        ++_latestHandle;
-
-		if (handleToLocationMap.contains(_latestHandle))
-        {
-            assert(false && "Generated a duplicate subscription handle.");
-            throw std::overflow_error{ "Subscription handle space exhausted." };
-        }
-
-        const auto [bucketIter, bucketInserted] =
-            keyToBucketMap.try_emplace(key);
+        const auto [bucketIter, bucketInserted] = keyToBucketMap.try_emplace(key);
 
         auto& bucket = bucketIter->second;
         const std::size_t objectIndex = bucket.objects.size();
@@ -79,14 +70,13 @@ public:
 
             try
             {
-                bucket.handles.push_back(_latestHandle);
+                bucket.handles.push_back(++_latestHandle);
 
                 try
                 {
-                    const bool locationInserted =
-                        handleToLocationMap.try_emplace(
-                            _latestHandle,
-                            SubscriptionLocation{ key, objectIndex }).second;
+                    const bool locationInserted = handleToLocationMap.try_emplace(
+                        _latestHandle,
+                        SubscriptionLocation{ key, objectIndex }).second;
 
                     if (!locationInserted)
                     {
@@ -149,8 +139,7 @@ public:
 
             if (objectIndex != lastIndex)
             {
-                const auto movedLocation =
-                    handleToLocationMap.find(bucket.handles[lastIndex]);
+                const auto movedLocation = handleToLocationMap.find(bucket.handles[lastIndex]);
 
                 if (movedLocation == handleToLocationMap.end())
                 {
@@ -179,14 +168,49 @@ public:
 		return false;
 	}
 
-    [[nodiscard]] std::vector<T> getSubscribedObjects(const K& key) const
+    [[nodiscard]] std::optional<std::vector<T>> getSubscribedObjects(const K& key) const
     {
         std::shared_lock lock{ _subscriptionsMutex };
         if (auto foundIter = keyToBucketMap.find(key); foundIter != keyToBucketMap.end())
         {
-            return foundIter->second.objects;
+            return { foundIter->second.objects };
         }
-        return {};
+        return std::nullopt;
+    }
+
+    [[nodiscard]] std::optional<T> getSubscribedObject(const K& key, const H& handle) const
+    {
+        std::shared_lock lock{ _subscriptionsMutex };
+        if (auto foundIter = keyToBucketMap.find(key); foundIter != keyToBucketMap.end())
+        {
+            const auto& handles = foundIter->second.handles;
+            if (auto foundHandle = std::find(handles.begin(), handles.end(), handle); foundHandle != handles.end())
+            {
+                return { foundIter->second.objects[std::distance(handles.begin(), foundHandle)] };
+            }
+            return std::nullopt;
+        }
+        return std::nullopt;
+    }
+
+    // Returns true if callable returned true at some point which also means for loop has been broken
+    template <typename Callable>
+    bool forEachSubscribedObject(const K& key, Callable&& callable) const
+    {
+        std::shared_lock lock{ _subscriptionsMutex };
+
+        if (auto foundIter = keyToBucketMap.find(key); foundIter != keyToBucketMap.end())
+        {
+            for (const T& object : foundIter->second.objects)
+            {
+                if (std::invoke(callable, object))
+                {
+                    return true;
+                }
+            }
+        }
+
+        return false;
     }
 
 private:
