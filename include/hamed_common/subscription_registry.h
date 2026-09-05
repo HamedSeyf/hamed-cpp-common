@@ -195,6 +195,10 @@ public:
 
     // Returns true if callable returned true at some point which also means for loop has been broken
     template <typename Callable>
+        requires requires(Callable& callable, const T& object)
+        {
+            { std::invoke(callable, object) } -> std::convertible_to<bool>;
+        }
     bool forEachSubscribedObject(const K& key, Callable&& callable) const
     {
         std::shared_lock lock{ _subscriptionsMutex };
@@ -214,6 +218,7 @@ public:
     }
 
     template <typename Predicate>
+        requires std::predicate<Predicate&, const T&>
     std::size_t removeSubscribedObjectsIf(const K& key, Predicate&& predicate)
     {
         std::unique_lock lock{ _subscriptionsMutex };
