@@ -213,6 +213,58 @@ public:
         return false;
     }
 
+    template <typename Predicate>
+    std::size_t removeSubscribedObjectsIf(const K& key, Predicate&& predicate)
+    {
+        std::unique_lock lock{ _subscriptionsMutex };
+
+        const auto bucketIter = keyToBucketMap.find(key);
+        if (bucketIter == keyToBucketMap.end())
+        {
+            return 0;
+        }
+
+        auto& bucket = bucketIter->second;
+        std::size_t removedCount = 0;
+        std::size_t index = 0;
+
+        while (index < bucket.objects.size())
+        {
+            if (!std::invoke(predicate, std::as_const(bucket.objects[index])))
+            {
+                ++index;
+                continue;
+            }
+
+            const auto removedLocation = handleToLocationMap.find(bucket.handles[index]);
+
+            const std::size_t lastIndex = bucket.objects.size() - 1;
+
+            if (index != lastIndex)
+            {
+                const auto movedLocation = handleToLocationMap.find(bucket.handles[lastIndex]);
+
+                using std::swap;
+                swap(bucket.objects[index], bucket.objects[lastIndex]);
+                swap(bucket.handles[index], bucket.handles[lastIndex]);
+
+                movedLocation->second.index = index;
+            }
+
+            handleToLocationMap.erase(removedLocation);
+            bucket.objects.pop_back();
+            bucket.handles.pop_back();
+            ++removedCount;
+        }
+
+        if (bucket.objects.empty())
+        {
+            keyToBucketMap.erase(bucketIter);
+        }
+
+        return removedCount;
+    }
+
 private:
 
     struct SubscriptionBucket

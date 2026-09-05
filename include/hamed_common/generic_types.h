@@ -20,6 +20,26 @@ import <type_traits>;
 import <utility>;
 
 
+// Any combination of std::shared_ptr and std::weak_ptr could be used here
+template <typename T>
+struct IsSharedOrWeakPtr : std::false_type {};
+
+template <typename T>
+struct IsSharedOrWeakPtr<std::shared_ptr<T>> : std::true_type {};
+
+template <typename T>
+struct IsSharedOrWeakPtr<std::weak_ptr<T>> : std::true_type {};
+
+template <typename T>
+concept SharedOrWeakPtr = IsSharedOrWeakPtr<std::remove_cvref_t<T>>::value;
+
+template <SharedOrWeakPtr TPtrA, SharedOrWeakPtr TPtrB>
+bool PointersHaveSameControlBlock(const TPtrA& a, const TPtrB& b)
+{
+    return !a.owner_before(b) && !b.owner_before(a);
+}
+
+
 template<typename T>
 concept RingQueueElement =
 	std::is_object_v<T> &&
