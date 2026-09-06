@@ -346,19 +346,28 @@ protected:
             return std::nullopt;
         }
 
-        if (!IsStateTransitionAllowedLocked(GetState(), newState))
+        const auto oldState = GetState();
+
+        if (!IsStateTransitionAllowedLocked(oldState, newState))
         {
             return std::nullopt;
         }
 
         _state.store(newState, std::memory_order_relaxed);
-        OnStateTransitionLocked(newState);
+
+        if (!OnStateTransitionLocked(newState))
+        {
+            _state.store(oldState, std::memory_order_relaxed);
+            return std::nullopt;
+        }
+
         return newState;
     }
 
     virtual bool IsStateTransitionAllowedLocked(const T fromState, const T toState) const { return toState > fromState; };
 
-    virtual void OnStateTransitionLocked([[maybe_unused]] const T newState) noexcept {};
+    // Return false if transition should be reverted. Last chance for the implementation to roll back changes if something critically goes wrong in this callback.
+    virtual bool OnStateTransitionLocked([[maybe_unused]] const T newState) noexcept { return true; };
     virtual void OnStateTransitionUnlocked([[maybe_unused]] const T newState) noexcept {};
 
     mutable TMutex _state_mutex;
