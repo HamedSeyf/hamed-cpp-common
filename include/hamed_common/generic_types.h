@@ -202,27 +202,12 @@ public:
 		return Result;
 	}
 
-	// Moves into caller-owned objects and returns the populated portion of the
-	// destination. The returned span never refers to this queue's storage.
-	[[nodiscard]] std::span<value_type> pop_into(std::span<value_type> Destination) noexcept
-		requires std::is_nothrow_move_assignable_v<value_type>
-	{
-		const size_type NumberToPop = (Size < Destination.size() ? Size : Destination.size());
-
-		for (size_type Index = 0; Index < NumberToPop; ++Index)
-		{
-			Destination[Index] = std::move(front());
-			pop();
-		}
-
-		return Destination.first(NumberToPop);
-    }
-
-    template <typename Predicate>
-        requires std::predicate<Predicate&, const value_type&>
-    [[nodiscard]] std::span<value_type> pop_into(std::span<value_type> Destination, Predicate&& predicate)
+    // Moves into caller-owned objects and returns the populated portion of the
+    // destination. The returned span never refers to this queue's storage.
+    template <typename Predicate = std::nullptr_t>
+    [[nodiscard]] std::span<value_type> pop_into(std::span<value_type> Destination, Predicate&& predicate = nullptr)
         requires
-            std::is_nothrow_move_constructible_v<value_type>&&
+            std::is_nothrow_move_constructible_v<value_type> &&
             std::is_nothrow_move_assignable_v<value_type>
     {
         const size_type OriginalSize = Size;
@@ -233,7 +218,14 @@ public:
             value_type Current = std::move(front());
             pop();
 
-            if (NumberPopped < Destination.size() && std::invoke(predicate, Current))
+            bool predicatePassed = true;
+
+            if constexpr (!std::is_same_v<std::remove_cvref_t<Predicate>, std::nullptr_t>)
+            {
+                predicatePassed = std::invoke(predicate, Current);
+            }
+
+            if (NumberPopped < Destination.size() && predicatePassed)
             {
                 Destination[NumberPopped++] = std::move(Current);
             }
@@ -348,7 +340,7 @@ protected:
 
         const auto oldState = GetState();
 
-        if (!IsStateTransitionAllowedLocked(oldState, newState))
+        if ((oldState == newState) || !IsStateTransitionAllowedLocked(oldState, newState))
         {
             return std::nullopt;
         }

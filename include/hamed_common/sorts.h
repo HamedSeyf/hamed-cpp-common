@@ -16,7 +16,7 @@ import <random>;
 import <string>;
 import <cstdio>;
 
-import <spdlog/spdlog.h>;
+#include <spdlog/spdlog.h>
 
 
 template<typename T, typename TComparator = std::less<T>>
