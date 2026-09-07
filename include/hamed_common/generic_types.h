@@ -10,8 +10,10 @@
 
 import <atomic>;
 import <cassert>;
+import <compare>;
 import <concepts>;
 import <cstddef>;
+import <iterator>;
 import <memory>;
 import <mutex>;
 import <optional>;
@@ -246,6 +248,95 @@ public:
 			pop();
 		}
 	}
+
+private:
+	// Random-access iterator over the ring's logical order. LogicalIndex is a plain,
+	// non-wrapping offset from Head; only dereferencing maps it onto physical storage
+	// via modulo Capacity, so iterator arithmetic never needs to know about wraparound.
+	// Invalidated the same way any other view of Storage/Head/Tail/Size would be: by a
+	// subsequent push, pop, clear, move, or destruction of the queue.
+	template<bool IsConst>
+	class Iterator
+	{
+	public:
+		using iterator_concept = std::random_access_iterator_tag;
+		using iterator_category = std::random_access_iterator_tag;
+		using value_type = T;
+		using difference_type = std::ptrdiff_t;
+		using pointer = std::conditional_t<IsConst, const value_type*, value_type*>;
+		using reference = std::conditional_t<IsConst, const value_type&, value_type&>;
+
+		Iterator() noexcept = default;
+
+		// Allows iterator -> const_iterator conversion. Templated on OtherIsConst (rather
+		// than just taking Iterator<false>) so this is never mistaken for IsConst's own
+		// copy constructor: a constructor template is never treated as a copy/move
+		// constructor, even when it could match that signature after instantiation.
+		template<bool OtherIsConst>
+			requires (IsConst && !OtherIsConst)
+		Iterator(const Iterator<OtherIsConst>& Other) noexcept
+			: Storage(Other.Storage)
+			, Capacity(Other.Capacity)
+			, Head(Other.Head)
+			, LogicalIndex(Other.LogicalIndex)
+		{
+		}
+
+		[[nodiscard]] reference operator*() const noexcept { return Storage[PhysicalIndex(0)]; }
+		[[nodiscard]] pointer operator->() const noexcept { return Storage + PhysicalIndex(0); }
+		[[nodiscard]] reference operator[](const difference_type Offset) const noexcept { return Storage[PhysicalIndex(Offset)]; }
+
+		Iterator& operator++() noexcept { ++LogicalIndex; return *this; }
+		Iterator operator++(int) noexcept { Iterator Result = *this; ++*this; return Result; }
+		Iterator& operator--() noexcept { --LogicalIndex; return *this; }
+		Iterator operator--(int) noexcept { Iterator Result = *this; --*this; return Result; }
+
+		Iterator& operator+=(const difference_type Offset) noexcept { LogicalIndex += Offset; return *this; }
+		Iterator& operator-=(const difference_type Offset) noexcept { LogicalIndex -= Offset; return *this; }
+
+		[[nodiscard]] friend Iterator operator+(Iterator It, const difference_type Offset) noexcept { It += Offset; return It; }
+		[[nodiscard]] friend Iterator operator+(const difference_type Offset, Iterator It) noexcept { It += Offset; return It; }
+		[[nodiscard]] friend Iterator operator-(Iterator It, const difference_type Offset) noexcept { It -= Offset; return It; }
+		[[nodiscard]] friend difference_type operator-(const Iterator& Left, const Iterator& Right) noexcept { return Left.LogicalIndex - Right.LogicalIndex; }
+
+		[[nodiscard]] friend bool operator==(const Iterator&, const Iterator&) noexcept = default;
+		[[nodiscard]] friend auto operator<=>(const Iterator& Left, const Iterator& Right) noexcept { return Left.LogicalIndex <=> Right.LogicalIndex; }
+
+	private:
+		friend class TRingQueue;
+		friend class Iterator<!IsConst>;
+
+		using StoragePointer = std::conditional_t<IsConst, const value_type*, value_type*>;
+
+		Iterator(StoragePointer Storage, const size_type Capacity, const size_type Head, const difference_type LogicalIndex) noexcept
+			: Storage(Storage)
+			, Capacity(Capacity)
+			, Head(Head)
+			, LogicalIndex(LogicalIndex)
+		{
+		}
+
+		[[nodiscard]] size_type PhysicalIndex(const difference_type Offset) const noexcept
+		{
+			return (Head + static_cast<size_type>(LogicalIndex + Offset)) % Capacity;
+		}
+
+		StoragePointer Storage = nullptr;
+		size_type Capacity = 0;
+		size_type Head = 0;
+		difference_type LogicalIndex = 0;
+	};
+
+public:
+	using iterator = Iterator<false>;
+	using const_iterator = Iterator<true>;
+
+	[[nodiscard]] iterator begin() noexcept { return iterator(Storage, Capacity, Head, 0); }
+	[[nodiscard]] iterator end() noexcept { return iterator(Storage, Capacity, Head, static_cast<std::ptrdiff_t>(Size)); }
+	[[nodiscard]] const_iterator begin() const noexcept { return const_iterator(Storage, Capacity, Head, 0); }
+	[[nodiscard]] const_iterator end() const noexcept { return const_iterator(Storage, Capacity, Head, static_cast<std::ptrdiff_t>(Size)); }
+	[[nodiscard]] const_iterator cbegin() const noexcept { return begin(); }
+	[[nodiscard]] const_iterator cend() const noexcept { return end(); }
 
 private:
 	using AllocatorType = std::allocator<value_type>;

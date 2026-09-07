@@ -15,28 +15,40 @@ import <optional>;
 import <random>;
 import <string>;
 import <cstdio>;
+import <ranges>;
+import <iterator>;
+import <functional>;
 
 #include <spdlog/spdlog.h>
 
 
-template<typename T, typename TComparator = std::less<T>>
-void BubbleSort(std::vector<T>& Input, const TComparator& Comparator = TComparator())
+// Sorts any mutable random-access range in place (std::vector, std::span, std::array,
+// a custom container's own iterators, ...) rather than being tied to std::vector.
+template<std::ranges::random_access_range R, typename TComparator = std::ranges::less>
+    requires
+        std::ranges::sized_range<R> &&
+        std::sortable<std::ranges::iterator_t<R>, TComparator>
+void BubbleSort(R&& Input, TComparator Comparator = {})
 {
-	if (Input.size() < 2)
+	const std::size_t Size = std::ranges::size(Input);
+
+	if (Size < 2)
 	{
 		return;
 	}
 
-    // Safe to use Input.size() - 1 due to size check earlier
-    for (std::size_t OuterElementIndexToFix = Input.size() - 1; OuterElementIndexToFix > 0; --OuterElementIndexToFix)
+	const auto Begin = std::ranges::begin(Input);
+
+    // Safe to use Size - 1 due to size check earlier
+    for (std::size_t OuterElementIndexToFix = Size - 1; OuterElementIndexToFix > 0; --OuterElementIndexToFix)
 	{
 		bool bHasSwappedAnyElement = false;
 
 		for (std::size_t InnerElementIndex = 0; InnerElementIndex < OuterElementIndexToFix; ++InnerElementIndex)
 		{
-			if (Comparator(Input[InnerElementIndex + 1], Input[InnerElementIndex]))
+			if (Comparator(Begin[InnerElementIndex + 1], Begin[InnerElementIndex]))
 			{
-				std::swap(Input[InnerElementIndex], Input[InnerElementIndex + 1]);
+				std::ranges::iter_swap(Begin + InnerElementIndex, Begin + InnerElementIndex + 1);
 				bHasSwappedAnyElement = true;
 			}
 		}
@@ -82,20 +94,30 @@ template<typename T, typename TComparator>
 }
 
 
-template<typename T, typename TComparator = std::less<T>>
-[[nodiscard]] std::vector<T> MergeSort(const std::vector<T>& Input, std::size_t StartIndex, std::size_t EndIndex, const TComparator& Comparator = TComparator())
+// Reads from any random-access range (std::vector, std::span, std::array, a custom
+// container's own iterators, ...); it never mutates Input, only copies out of it,
+// so unlike BubbleSort it doesn't need Input to be sortable/mutable.
+template<std::ranges::random_access_range R, typename TComparator = std::ranges::less>
+    requires
+        std::ranges::sized_range<R> &&
+        std::indirect_strict_weak_order<TComparator, std::ranges::iterator_t<R>>
+[[nodiscard]] std::vector<std::ranges::range_value_t<R>> MergeSort(R&& Input, std::size_t StartIndex, std::size_t EndIndex, TComparator Comparator = {})
 {
-	assert(StartIndex <= EndIndex);
-	assert(Input.empty() || EndIndex < Input.size());
+	using T = std::ranges::range_value_t<R>;
 
-	if (Input.empty())
+	assert(StartIndex <= EndIndex);
+	assert(std::ranges::empty(Input) || EndIndex < std::ranges::size(Input));
+
+	if (std::ranges::empty(Input))
 	{
 		return {};
 	}
 
+	const auto Begin = std::ranges::begin(Input);
+
 	if (StartIndex == EndIndex)
 	{
-		return std::vector<T>(Input.begin() + StartIndex, Input.begin() + EndIndex + 1);
+		return std::vector<T>(Begin + StartIndex, Begin + EndIndex + 1);
 	}
 
 	// Avoiding (StartIndex + EndIndex) / 2 to avoid potential overflow of sum operation
@@ -108,9 +130,16 @@ template<typename T, typename TComparator = std::less<T>>
 }
 
 
-// Simple overload which sorts the whole array
-template<typename T, typename TComparator = std::less<T>>
-[[nodiscard]] std::vector<T> MergeSort(const std::vector<T>& Input, const TComparator& Comparator = TComparator())
+// Simple overload which sorts the whole range
+template<std::ranges::random_access_range R, typename TComparator = std::ranges::less>
+    requires
+        std::ranges::sized_range<R> &&
+        std::indirect_strict_weak_order<TComparator, std::ranges::iterator_t<R>>
+[[nodiscard]] std::vector<std::ranges::range_value_t<R>> MergeSort(R&& Input, TComparator Comparator = {})
 {
-    return Input.size() < 2 ? Input : MergeSort(Input, 0, Input.size() - 1, Comparator);
+	const std::size_t Size = std::ranges::size(Input);
+
+	return Size < 2
+		? std::vector<std::ranges::range_value_t<R>>(std::ranges::begin(Input), std::ranges::end(Input))
+		: MergeSort(Input, std::size_t{ 0 }, Size - 1, Comparator);
 }
