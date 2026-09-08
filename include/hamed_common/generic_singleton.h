@@ -9,7 +9,7 @@ class TSingleton
 {
 public:
 
-	[[nodiscard]] static T& GetInstance()
+	[[nodiscard]] static T& getInstance()
 	{
 		static T sInstance;
 		return sInstance;

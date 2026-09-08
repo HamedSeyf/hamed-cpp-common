@@ -151,27 +151,27 @@ template<typename FuncType>
 class ScopeExit
 {
 public:
-	explicit ScopeExit(FuncType&& Func)
-		: Func_(std::forward<FuncType>(Func))
+	explicit ScopeExit(FuncType&& func)
+		: func_(std::forward<FuncType>(func))
 	{}
 
 	~ScopeExit()
 	{
-		Func_();
+		func_();
 	}
 
 	ScopeExit(const ScopeExit&) = delete;
 	ScopeExit& operator=(const ScopeExit&) = delete;
 
 private:
-	FuncType Func_;
+	FuncType func_;
 };
 
 template<typename FuncType>
-ScopeExit<FuncType> MakeScopeExit(FuncType&& Func)
+ScopeExit<FuncType> makeScopeExit(FuncType&& func)
 {
 	return ScopeExit<FuncType>(
-		std::forward<FuncType>(Func));
+		std::forward<FuncType>(func));
 }
 
 #define HAMEDSEYF_CONCAT_IMPL(X, Y) X##Y
@@ -179,4 +179,4 @@ ScopeExit<FuncType> MakeScopeExit(FuncType&& Func)
 
 #define HAMEDSEYF_SCOPE_EXIT(Func) \
 	auto HAMEDSEYF_CONCAT(scope_exit_, __LINE__) = \
-		MakeScopeExit(Func)
+		makeScopeExit(Func)

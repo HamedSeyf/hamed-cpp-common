@@ -57,9 +57,9 @@ public:
 
 	H subscribe(T object, const K& key)
     {
-        std::unique_lock lock{ _subscriptionsMutex };
+        std::unique_lock lock{ subscriptionsMutex_ };
 
-        const auto [bucketIter, bucketInserted] = keyToBucketMap.try_emplace(key);
+        const auto [bucketIter, bucketInserted] = keyToBucketMap_.try_emplace(key);
 
         auto& bucket = bucketIter->second;
         const std::size_t objectIndex = bucket.objects.size();
@@ -70,12 +70,12 @@ public:
 
             try
             {
-                bucket.handles.push_back(++_latestHandle);
+                bucket.handles.push_back(++latestHandle_);
 
                 try
                 {
-                    const bool locationInserted = handleToLocationMap.try_emplace(
-                        _latestHandle,
+                    const bool locationInserted = handleToLocationMap_.try_emplace(
+                        latestHandle_,
                         SubscriptionLocation{ key, objectIndex }).second;
 
                     if (!locationInserted)
@@ -100,24 +100,24 @@ public:
         {
             if (bucketInserted)
             {
-                keyToBucketMap.erase(bucketIter);
+                keyToBucketMap_.erase(bucketIter);
             }
 
             throw;
         }
 
-        return _latestHandle;
+        return latestHandle_;
 	}
 
 	bool unsubscribe(const H& handle)
     {
-        std::unique_lock lock{ _subscriptionsMutex };
+        std::unique_lock lock{ subscriptionsMutex_ };
 
-		if (const auto foundLocation = handleToLocationMap.find(handle); foundLocation != handleToLocationMap.end())
+		if (const auto foundLocation = handleToLocationMap_.find(handle); foundLocation != handleToLocationMap_.end())
         {
-            const auto foundBucket = keyToBucketMap.find(foundLocation->second.key);
+            const auto foundBucket = keyToBucketMap_.find(foundLocation->second.key);
 
-            if (foundBucket == keyToBucketMap.end())
+            if (foundBucket == keyToBucketMap_.end())
             {
                 assert(false && "Subscription location refers to a missing bucket.");
                 throw std::logic_error{ "Subscription indexes are inconsistent." };
@@ -139,9 +139,9 @@ public:
 
             if (objectIndex != lastIndex)
             {
-                const auto movedLocation = handleToLocationMap.find(bucket.handles[lastIndex]);
+                const auto movedLocation = handleToLocationMap_.find(bucket.handles[lastIndex]);
 
-                if (movedLocation == handleToLocationMap.end())
+                if (movedLocation == handleToLocationMap_.end())
                 {
                     assert(false && "Subscription bucket contains an unindexed handle.");
                     throw std::logic_error{ "Subscription indexes are inconsistent." };
@@ -155,11 +155,11 @@ public:
 
             bucket.objects.pop_back();
             bucket.handles.pop_back();
-			handleToLocationMap.erase(foundLocation);
+			handleToLocationMap_.erase(foundLocation);
 
             if (bucket.objects.empty())
             {
-                keyToBucketMap.erase(foundBucket);
+                keyToBucketMap_.erase(foundBucket);
             }
 
 			return true;
@@ -170,8 +170,8 @@ public:
 
     [[nodiscard]] std::optional<std::vector<T>> getSubscribedObjects(const K& key) const
     {
-        std::shared_lock lock{ _subscriptionsMutex };
-        if (auto foundIter = keyToBucketMap.find(key); foundIter != keyToBucketMap.end())
+        std::shared_lock lock{ subscriptionsMutex_ };
+        if (auto foundIter = keyToBucketMap_.find(key); foundIter != keyToBucketMap_.end())
         {
             return { foundIter->second.objects };
         }
@@ -180,8 +180,8 @@ public:
 
     [[nodiscard]] std::optional<T> getSubscribedObject(const K& key, const H& handle) const
     {
-        std::shared_lock lock{ _subscriptionsMutex };
-        if (auto foundIter = keyToBucketMap.find(key); foundIter != keyToBucketMap.end())
+        std::shared_lock lock{ subscriptionsMutex_ };
+        if (auto foundIter = keyToBucketMap_.find(key); foundIter != keyToBucketMap_.end())
         {
             const auto& handles = foundIter->second.handles;
             if (auto foundHandle = std::find(handles.begin(), handles.end(), handle); foundHandle != handles.end())
@@ -201,9 +201,9 @@ public:
         }
     bool forEachSubscribedObject(const K& key, Callable&& callable) const
     {
-        std::shared_lock lock{ _subscriptionsMutex };
+        std::shared_lock lock{ subscriptionsMutex_ };
 
-        if (auto foundIter = keyToBucketMap.find(key); foundIter != keyToBucketMap.end())
+        if (auto foundIter = keyToBucketMap_.find(key); foundIter != keyToBucketMap_.end())
         {
             for (const T& object : foundIter->second.objects)
             {
@@ -221,10 +221,10 @@ public:
         requires std::predicate<Predicate&, const T&>
     std::size_t removeSubscribedObjectsIf(const K& key, Predicate&& predicate)
     {
-        std::unique_lock lock{ _subscriptionsMutex };
+        std::unique_lock lock{ subscriptionsMutex_ };
 
-        const auto bucketIter = keyToBucketMap.find(key);
-        if (bucketIter == keyToBucketMap.end())
+        const auto bucketIter = keyToBucketMap_.find(key);
+        if (bucketIter == keyToBucketMap_.end())
         {
             return 0;
         }
@@ -241,13 +241,13 @@ public:
                 continue;
             }
 
-            const auto removedLocation = handleToLocationMap.find(bucket.handles[index]);
+            const auto removedLocation = handleToLocationMap_.find(bucket.handles[index]);
 
             const std::size_t lastIndex = bucket.objects.size() - 1;
 
             if (index != lastIndex)
             {
-                const auto movedLocation = handleToLocationMap.find(bucket.handles[lastIndex]);
+                const auto movedLocation = handleToLocationMap_.find(bucket.handles[lastIndex]);
 
                 using std::swap;
                 swap(bucket.objects[index], bucket.objects[lastIndex]);
@@ -256,7 +256,7 @@ public:
                 movedLocation->second.index = index;
             }
 
-            handleToLocationMap.erase(removedLocation);
+            handleToLocationMap_.erase(removedLocation);
             bucket.objects.pop_back();
             bucket.handles.pop_back();
             ++removedCount;
@@ -264,7 +264,7 @@ public:
 
         if (bucket.objects.empty())
         {
-            keyToBucketMap.erase(bucketIter);
+            keyToBucketMap_.erase(bucketIter);
         }
 
         return removedCount;
@@ -284,10 +284,10 @@ private:
         std::size_t index;
     };
 
-    H _latestHandle{ };
+    H latestHandle_{ };
     // Using a shared_mutex since subscriptions snapshots happen concurrently and subscription changes are relatively rare
-    mutable std::shared_mutex _subscriptionsMutex;
-    std::unordered_map<K, SubscriptionBucket> keyToBucketMap;
-	std::unordered_map<H, SubscriptionLocation> handleToLocationMap;
+    mutable std::shared_mutex subscriptionsMutex_;
+    std::unordered_map<K, SubscriptionBucket> keyToBucketMap_;
+	std::unordered_map<H, SubscriptionLocation> handleToLocationMap_;
 
 };

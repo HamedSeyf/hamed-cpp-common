@@ -36,7 +36,7 @@ template <typename T>
 concept SharedOrWeakPtr = IsSharedOrWeakPtr<std::remove_cvref_t<T>>::value;
 
 template <SharedOrWeakPtr TPtrA, SharedOrWeakPtr TPtrB>
-bool PointersHaveSameControlBlock(const TPtrA& a, const TPtrB& b)
+bool pointersHaveSameControlBlock(const TPtrA& a, const TPtrB& b)
 {
     return !a.owner_before(b) && !b.owner_before(a);
 }
@@ -63,40 +63,40 @@ public:
 	using reference = value_type&;
 	using const_reference = const value_type&;
 
-	explicit TRingQueue(const size_type Capacity)
-		: Capacity(Capacity)
-		, Storage(Capacity == 0 ? nullptr : AllocatorTraits::allocate(Allocator, Capacity))
+	explicit TRingQueue(const size_type capacity)
+		: capacity_(capacity)
+		, storage_(capacity == 0 ? nullptr : AllocatorTraits::allocate(allocator_, capacity))
 	{
 	}
 
 	~TRingQueue()
 	{
-		Reset();
+		reset();
 	}
 
 	TRingQueue(const TRingQueue&) = delete;
 	TRingQueue& operator=(const TRingQueue&) = delete;
 
-	TRingQueue(TRingQueue&& Other) noexcept
-		: Capacity(std::exchange(Other.Capacity, 0))
-		, Size(std::exchange(Other.Size, 0))
-		, Head(std::exchange(Other.Head, 0))
-		, Tail(std::exchange(Other.Tail, 0))
-		, Storage(std::exchange(Other.Storage, nullptr))
+	TRingQueue(TRingQueue&& other) noexcept
+		: capacity_(std::exchange(other.capacity_, 0))
+		, size_(std::exchange(other.size_, 0))
+		, head_(std::exchange(other.head_, 0))
+		, tail_(std::exchange(other.tail_, 0))
+		, storage_(std::exchange(other.storage_, nullptr))
 	{
 	}
 
-	TRingQueue& operator=(TRingQueue&& Other) noexcept
+	TRingQueue& operator=(TRingQueue&& other) noexcept
 	{
-		if (this != &Other)
+		if (this != &other)
 		{
-			Reset();
+			reset();
 
-			Capacity = std::exchange(Other.Capacity, 0);
-			Size = std::exchange(Other.Size, 0);
-			Head = std::exchange(Other.Head, 0);
-			Tail = std::exchange(Other.Tail, 0);
-			Storage = std::exchange(Other.Storage, nullptr);
+			capacity_ = std::exchange(other.capacity_, 0);
+			size_ = std::exchange(other.size_, 0);
+			head_ = std::exchange(other.head_, 0);
+			tail_ = std::exchange(other.tail_, 0);
+			storage_ = std::exchange(other.storage_, nullptr);
 		}
 
 		return *this;
@@ -104,51 +104,51 @@ public:
 
 	[[nodiscard]] size_type capacity() const noexcept
 	{
-		return Capacity;
+		return capacity_;
 	}
 
 	[[nodiscard]] size_type size() const noexcept
 	{
-		return Size;
+		return size_;
 	}
 
 	[[nodiscard]] bool empty() const noexcept
 	{
-		return Size == 0;
+		return size_ == 0;
 	}
 
 	[[nodiscard]] bool full() const noexcept
 	{
-		return Size == Capacity;
+		return size_ == capacity_;
 	}
 
 	[[nodiscard]] reference front() noexcept
 	{
 		assert(!empty());
-		return Storage[Head];
+		return storage_[head_];
 	}
 
 	[[nodiscard]] const_reference front() const noexcept
 	{
 		assert(!empty());
-		return Storage[Head];
+		return storage_[head_];
 	}
 
 	[[nodiscard]] reference back() noexcept
 	{
 		assert(!empty());
-		return Storage[Tail == 0 ? Capacity - 1 : Tail - 1];
+		return storage_[tail_ == 0 ? capacity_ - 1 : tail_ - 1];
 	}
 
 	[[nodiscard]] const_reference back() const noexcept
 	{
 		assert(!empty());
-		return Storage[Tail == 0 ? Capacity - 1 : Tail - 1];
+		return storage_[tail_ == 0 ? capacity_ - 1 : tail_ - 1];
 	}
 
 	template<typename... TArguments>
 		requires std::constructible_from<value_type, TArguments...>
-	[[nodiscard]] bool try_emplace(TArguments&&... Arguments)
+	[[nodiscard]] bool try_emplace(TArguments&&... arguments)
 	{
 		if (full())
 		{
@@ -156,35 +156,35 @@ public:
 		}
 
 		AllocatorTraits::construct(
-			Allocator,
-			Storage + Tail,
-			std::forward<TArguments>(Arguments)...);
+			allocator_,
+			storage_ + tail_,
+			std::forward<TArguments>(arguments)...);
 
-		Tail = Advance(Tail);
-		++Size;
+		tail_ = advance(tail_);
+		++size_;
 
 		return true;
 	}
 
-	[[nodiscard]] bool try_push(const value_type& Value)
+	[[nodiscard]] bool try_push(const value_type& value)
 		requires std::constructible_from<value_type, const value_type&>
 	{
-		return try_emplace(Value);
+		return try_emplace(value);
 	}
 
-	[[nodiscard]] bool try_push(value_type&& Value)
+	[[nodiscard]] bool try_push(value_type&& value)
 		requires std::constructible_from<value_type, value_type&&>
 	{
-		return try_emplace(std::move(Value));
+		return try_emplace(std::move(value));
 	}
 
 	void pop() noexcept
 	{
 		assert(!empty());
 
-		AllocatorTraits::destroy(Allocator, Storage + Head);
-		Head = Advance(Head);
-		--Size;
+		AllocatorTraits::destroy(allocator_, storage_ + head_);
+		head_ = advance(head_);
+		--size_;
 	}
 
 	[[nodiscard]] std::optional<value_type> try_pop() noexcept
@@ -195,50 +195,50 @@ public:
 			return std::nullopt;
 		}
 
-		std::optional<value_type> Result{
+		std::optional<value_type> result{
 			std::in_place,
 			std::move(front())
 		};
 
 		pop();
-		return Result;
+		return result;
 	}
 
     // Moves into caller-owned objects and returns the populated portion of the
     // destination. The returned span never refers to this queue's storage.
     template <typename Predicate = std::nullptr_t>
-    [[nodiscard]] std::span<value_type> pop_into(std::span<value_type> Destination, Predicate&& predicate = nullptr)
+    [[nodiscard]] std::span<value_type> pop_into(std::span<value_type> destination, Predicate&& predicate = nullptr)
         requires
             std::is_nothrow_move_constructible_v<value_type> &&
             std::is_nothrow_move_assignable_v<value_type>
     {
-        const size_type OriginalSize = Size;
-        size_type NumberPopped = 0;
+        const size_type originalSize = size_;
+        size_type numberPopped = 0;
 
-        for (size_type Index = 0; Index < OriginalSize; ++Index)
+        for (size_type index = 0; index < originalSize; ++index)
         {
-            value_type Current = std::move(front());
+            value_type current = std::move(front());
             pop();
 
             bool predicatePassed = true;
 
             if constexpr (!std::is_same_v<std::remove_cvref_t<Predicate>, std::nullptr_t>)
             {
-                predicatePassed = std::invoke(predicate, Current);
+                predicatePassed = std::invoke(predicate, current);
             }
 
-            if (NumberPopped < Destination.size() && predicatePassed)
+            if (numberPopped < destination.size() && predicatePassed)
             {
-                Destination[NumberPopped++] = std::move(Current);
+                destination[numberPopped++] = std::move(current);
             }
             else
             {
-                [[maybe_unused]] const bool success = try_push(std::move(Current));
+                [[maybe_unused]] const bool success = try_push(std::move(current));
                 assert(success && "Failed to push inside TRingQueue's pop_into.");
             }
         }
 
-        return Destination.first(NumberPopped);
+        return destination.first(numberPopped);
     }
 
 	void clear() noexcept
@@ -250,11 +250,11 @@ public:
 	}
 
 private:
-	// Random-access iterator over the ring's logical order. LogicalIndex is a plain,
-	// non-wrapping offset from Head; only dereferencing maps it onto physical storage
-	// via modulo Capacity, so iterator arithmetic never needs to know about wraparound.
-	// Invalidated the same way any other view of Storage/Head/Tail/Size would be: by a
-	// subsequent push, pop, clear, move, or destruction of the queue.
+	// Random-access iterator over the ring's logical order. logicalIndex_ is a plain,
+	// non-wrapping offset from head_; only dereferencing maps it onto physical storage
+	// via modulo capacity_, so iterator arithmetic never needs to know about wraparound.
+	// Invalidated the same way any other view of storage_/head_/tail_/size_ would be: by
+	// a subsequent push, pop, clear, move, or destruction of the queue.
 	template<bool IsConst>
 	class Iterator
 	{
@@ -274,33 +274,33 @@ private:
 		// constructor, even when it could match that signature after instantiation.
 		template<bool OtherIsConst>
 			requires (IsConst && !OtherIsConst)
-		Iterator(const Iterator<OtherIsConst>& Other) noexcept
-			: Storage(Other.Storage)
-			, Capacity(Other.Capacity)
-			, Head(Other.Head)
-			, LogicalIndex(Other.LogicalIndex)
+		Iterator(const Iterator<OtherIsConst>& other) noexcept
+			: storage_(other.storage_)
+			, capacity_(other.capacity_)
+			, head_(other.head_)
+			, logicalIndex_(other.logicalIndex_)
 		{
 		}
 
-		[[nodiscard]] reference operator*() const noexcept { return Storage[PhysicalIndex(0)]; }
-		[[nodiscard]] pointer operator->() const noexcept { return Storage + PhysicalIndex(0); }
-		[[nodiscard]] reference operator[](const difference_type Offset) const noexcept { return Storage[PhysicalIndex(Offset)]; }
+		[[nodiscard]] reference operator*() const noexcept { return storage_[physicalIndex(0)]; }
+		[[nodiscard]] pointer operator->() const noexcept { return storage_ + physicalIndex(0); }
+		[[nodiscard]] reference operator[](const difference_type offset) const noexcept { return storage_[physicalIndex(offset)]; }
 
-		Iterator& operator++() noexcept { ++LogicalIndex; return *this; }
-		Iterator operator++(int) noexcept { Iterator Result = *this; ++*this; return Result; }
-		Iterator& operator--() noexcept { --LogicalIndex; return *this; }
-		Iterator operator--(int) noexcept { Iterator Result = *this; --*this; return Result; }
+		Iterator& operator++() noexcept { ++logicalIndex_; return *this; }
+		Iterator operator++(int) noexcept { Iterator result = *this; ++*this; return result; }
+		Iterator& operator--() noexcept { --logicalIndex_; return *this; }
+		Iterator operator--(int) noexcept { Iterator result = *this; --*this; return result; }
 
-		Iterator& operator+=(const difference_type Offset) noexcept { LogicalIndex += Offset; return *this; }
-		Iterator& operator-=(const difference_type Offset) noexcept { LogicalIndex -= Offset; return *this; }
+		Iterator& operator+=(const difference_type offset) noexcept { logicalIndex_ += offset; return *this; }
+		Iterator& operator-=(const difference_type offset) noexcept { logicalIndex_ -= offset; return *this; }
 
-		[[nodiscard]] friend Iterator operator+(Iterator It, const difference_type Offset) noexcept { It += Offset; return It; }
-		[[nodiscard]] friend Iterator operator+(const difference_type Offset, Iterator It) noexcept { It += Offset; return It; }
-		[[nodiscard]] friend Iterator operator-(Iterator It, const difference_type Offset) noexcept { It -= Offset; return It; }
-		[[nodiscard]] friend difference_type operator-(const Iterator& Left, const Iterator& Right) noexcept { return Left.LogicalIndex - Right.LogicalIndex; }
+		[[nodiscard]] friend Iterator operator+(Iterator it, const difference_type offset) noexcept { it += offset; return it; }
+		[[nodiscard]] friend Iterator operator+(const difference_type offset, Iterator it) noexcept { it += offset; return it; }
+		[[nodiscard]] friend Iterator operator-(Iterator it, const difference_type offset) noexcept { it -= offset; return it; }
+		[[nodiscard]] friend difference_type operator-(const Iterator& left, const Iterator& right) noexcept { return left.logicalIndex_ - right.logicalIndex_; }
 
 		[[nodiscard]] friend bool operator==(const Iterator&, const Iterator&) noexcept = default;
-		[[nodiscard]] friend auto operator<=>(const Iterator& Left, const Iterator& Right) noexcept { return Left.LogicalIndex <=> Right.LogicalIndex; }
+		[[nodiscard]] friend auto operator<=>(const Iterator& left, const Iterator& right) noexcept { return left.logicalIndex_ <=> right.logicalIndex_; }
 
 	private:
 		friend class TRingQueue;
@@ -308,33 +308,33 @@ private:
 
 		using StoragePointer = std::conditional_t<IsConst, const value_type*, value_type*>;
 
-		Iterator(StoragePointer Storage, const size_type Capacity, const size_type Head, const difference_type LogicalIndex) noexcept
-			: Storage(Storage)
-			, Capacity(Capacity)
-			, Head(Head)
-			, LogicalIndex(LogicalIndex)
+		Iterator(StoragePointer storage, const size_type capacity, const size_type head, const difference_type logicalIndex) noexcept
+			: storage_(storage)
+			, capacity_(capacity)
+			, head_(head)
+			, logicalIndex_(logicalIndex)
 		{
 		}
 
-		[[nodiscard]] size_type PhysicalIndex(const difference_type Offset) const noexcept
+		[[nodiscard]] size_type physicalIndex(const difference_type offset) const noexcept
 		{
-			return (Head + static_cast<size_type>(LogicalIndex + Offset)) % Capacity;
+			return (head_ + static_cast<size_type>(logicalIndex_ + offset)) % capacity_;
 		}
 
-		StoragePointer Storage = nullptr;
-		size_type Capacity = 0;
-		size_type Head = 0;
-		difference_type LogicalIndex = 0;
+		StoragePointer storage_ = nullptr;
+		size_type capacity_ = 0;
+		size_type head_ = 0;
+		difference_type logicalIndex_ = 0;
 	};
 
 public:
 	using iterator = Iterator<false>;
 	using const_iterator = Iterator<true>;
 
-	[[nodiscard]] iterator begin() noexcept { return iterator(Storage, Capacity, Head, 0); }
-	[[nodiscard]] iterator end() noexcept { return iterator(Storage, Capacity, Head, static_cast<std::ptrdiff_t>(Size)); }
-	[[nodiscard]] const_iterator begin() const noexcept { return const_iterator(Storage, Capacity, Head, 0); }
-	[[nodiscard]] const_iterator end() const noexcept { return const_iterator(Storage, Capacity, Head, static_cast<std::ptrdiff_t>(Size)); }
+	[[nodiscard]] iterator begin() noexcept { return iterator(storage_, capacity_, head_, 0); }
+	[[nodiscard]] iterator end() noexcept { return iterator(storage_, capacity_, head_, static_cast<std::ptrdiff_t>(size_)); }
+	[[nodiscard]] const_iterator begin() const noexcept { return const_iterator(storage_, capacity_, head_, 0); }
+	[[nodiscard]] const_iterator end() const noexcept { return const_iterator(storage_, capacity_, head_, static_cast<std::ptrdiff_t>(size_)); }
 	[[nodiscard]] const_iterator cbegin() const noexcept { return begin(); }
 	[[nodiscard]] const_iterator cend() const noexcept { return end(); }
 
@@ -342,32 +342,32 @@ private:
 	using AllocatorType = std::allocator<value_type>;
 	using AllocatorTraits = std::allocator_traits<AllocatorType>;
 
-	[[nodiscard]] size_type Advance(const size_type Index) const noexcept
+	[[nodiscard]] size_type advance(const size_type index) const noexcept
 	{
-		return Index + 1 == Capacity ? 0 : Index + 1;
+		return index + 1 == capacity_ ? 0 : index + 1;
 	}
 
-	void Reset() noexcept
+	void reset() noexcept
 	{
 		clear();
 
-		if (Storage != nullptr)
+		if (storage_ != nullptr)
 		{
-			AllocatorTraits::deallocate(Allocator, Storage, Capacity);
+			AllocatorTraits::deallocate(allocator_, storage_, capacity_);
 		}
 
-		Capacity = 0;
-		Head = 0;
-		Tail = 0;
-		Storage = nullptr;
+		capacity_ = 0;
+		head_ = 0;
+		tail_ = 0;
+		storage_ = nullptr;
 	}
 
-	[[no_unique_address]] AllocatorType Allocator;
-	size_type Capacity { 0 };
-	size_type Size { 0 };
-	size_type Head { 0 };
-	size_type Tail { 0 };
-	value_type* Storage { nullptr };
+	[[no_unique_address]] AllocatorType allocator_;
+	size_type capacity_ { 0 };
+	size_type size_ { 0 };
+	size_type head_ { 0 };
+	size_type tail_ { 0 };
+	value_type* storage_ { nullptr };
 };
 
 enum class TStateMachineState
@@ -395,19 +395,19 @@ class TStateMachine
 {
 public:
 
-    [[nodiscard]] T GetState() const noexcept { return _state.load(std::memory_order_relaxed); }
+    [[nodiscard]] T getState() const noexcept { return state_.load(std::memory_order_relaxed); }
 
     // Returns the new state if transition was successful
-    virtual std::optional<T> SwitchToState(const T newState)
+    virtual std::optional<T> switchToState(const T newState)
     {
-        std::unique_lock<TMutex> lock(_state_mutex);
+        std::unique_lock<TMutex> lock(stateMutex_);
 
-        const std::optional<T> result = SwitchToStateLocked(lock, newState);
+        const std::optional<T> result = switchToStateLocked(lock, newState);
 
         if (result)
         {
             lock.unlock();
-            OnStateTransitionUnlocked(newState);
+            onStateTransitionUnlocked(newState);
         }
 
         return result;
@@ -417,43 +417,43 @@ protected:
 
     virtual ~TStateMachine() = default;
 
-    // Same as SwitchToState, but the caller must already hold _state_mutex.
+    // Same as switchToState, but the caller must already hold stateMutex_.
     // On success, the caller is responsible for calling
-    // OnStateTransitionUnlocked(newState) itself, after unlocking.
-    std::optional<T> SwitchToStateLocked(const std::unique_lock<TMutex>& stateLock, const T newState)
+    // onStateTransitionUnlocked(newState) itself, after unlocking.
+    std::optional<T> switchToStateLocked(const std::unique_lock<TMutex>& stateLock, const T newState)
     {
-        if (!stateLock.owns_lock() || stateLock.mutex() != &_state_mutex)
+        if (!stateLock.owns_lock() || stateLock.mutex() != &stateMutex_)
         {
-            assert(false && "SwitchToStateLocked requires this state machine's mutex.");
+            assert(false && "switchToStateLocked requires this state machine's mutex.");
             return std::nullopt;
         }
 
-        const auto oldState = GetState();
+        const auto oldState = getState();
 
-        if ((oldState == newState) || !IsStateTransitionAllowedLocked(oldState, newState))
+        if ((oldState == newState) || !isStateTransitionAllowedLocked(oldState, newState))
         {
             return std::nullopt;
         }
 
-        _state.store(newState, std::memory_order_relaxed);
+        state_.store(newState, std::memory_order_relaxed);
 
-        if (!OnStateTransitionLocked(newState))
+        if (!onStateTransitionLocked(newState))
         {
-            _state.store(oldState, std::memory_order_relaxed);
+            state_.store(oldState, std::memory_order_relaxed);
             return std::nullopt;
         }
 
         return newState;
     }
 
-    virtual bool IsStateTransitionAllowedLocked(const T fromState, const T toState) const { return toState > fromState; };
+    virtual bool isStateTransitionAllowedLocked(const T fromState, const T toState) const { return toState > fromState; };
 
     // Return false if transition should be reverted. Last chance for the implementation to roll back changes if something critically goes wrong in this callback.
-    virtual bool OnStateTransitionLocked([[maybe_unused]] const T newState) noexcept { return true; };
-    virtual void OnStateTransitionUnlocked([[maybe_unused]] const T newState) noexcept {};
+    virtual bool onStateTransitionLocked([[maybe_unused]] const T newState) noexcept { return true; };
+    virtual void onStateTransitionUnlocked([[maybe_unused]] const T newState) noexcept {};
 
-    mutable TMutex _state_mutex;
+    mutable TMutex stateMutex_;
 
 private:
-    std::atomic<T> _state{ T{} };
+    std::atomic<T> state_{ T{} };
 };
