@@ -374,7 +374,6 @@ enum class TStateMachineState
 {
     NotStarted = 0,
     InProgress,
-    Stopping_Gracefully,
     Stopped,
 };
 
@@ -420,7 +419,7 @@ protected:
 
     // Same as SwitchToState, but the caller must already hold _state_mutex.
     // On success, the caller is responsible for calling
-    // PostStateTransitionMutexUnLocked(newState) itself, after unlocking.
+    // OnStateTransitionUnlocked(newState) itself, after unlocking.
     std::optional<T> SwitchToStateLocked(const std::unique_lock<TMutex>& stateLock, const T newState)
     {
         if (!stateLock.owns_lock() || stateLock.mutex() != &_state_mutex)
